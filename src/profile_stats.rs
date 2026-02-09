@@ -83,7 +83,8 @@ fn normalize_op_name(name: &str) -> &str {
 /// * `input_file` - 输入的 JSON trace 文件路径
 /// * `output_file` - 输出的 CSV 统计文件路径  
 /// * `trim_start_kernel` - 可选，指定每个 ProfileStep 中开始统计的第一个 kernel 名称（包含匹配）
-pub fn analyze_profile_stats(input_file: &str, output_file: &str, trim_start_kernel: Option<&str>) -> Result<(), Box<dyn Error>> {
+/// * `decode_max_duration_ms` - decode 阶段最大耗时阈值（毫秒），超过此值的 ProfileStep 被视为 prefill 阶段并过滤
+pub fn analyze_profile_stats(input_file: &str, output_file: &str, trim_start_kernel: Option<&str>, decode_max_duration_ms: f64) -> Result<(), Box<dyn Error>> {
     println!("Processing JSON file: {}", input_file);
 
     // 打开并解析 JSON 文件
@@ -147,20 +148,20 @@ pub fn analyze_profile_stats(input_file: &str, output_file: &str, trim_start_ker
     profile_steps.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
     gpu_operations.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
 
-    // 过滤掉 prefill 阶段（耗时 > 30ms 的 ProfileStep）
+    // 过滤掉 prefill 阶段（耗时超过阈值的 ProfileStep）
     // decode 通常耗时 10～20ms，prefill 耗时 40～50ms
-    const DECODE_MAX_DURATION_US: f64 = 30000.0; // 30ms
+    let decode_max_duration_us = decode_max_duration_ms * 1000.0; // 转换为微秒
     let total_before_filter = profile_steps.len();
     profile_steps.retain(|step| {
         let duration = step.end_time - step.start_time;
-        duration <= DECODE_MAX_DURATION_US
+        duration <= decode_max_duration_us
     });
     
     let filtered_count = total_before_filter - profile_steps.len();
     println!(
         "Filtered out {} prefill steps (duration > {}ms), {} decode steps remaining",
         filtered_count,
-        DECODE_MAX_DURATION_US / 1000.0,
+        decode_max_duration_ms,
         profile_steps.len()
     );
 

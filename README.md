@@ -21,7 +21,7 @@ cargo build --release
 ./target/release/trace_processor extract <输入JSON> <输出CSV> <开始时间,结束时间>
 
 # 统计 ProfileStep 内 GPU 操作的平均耗时
-./target/release/trace_processor stats <输入JSON> <输出CSV> [起始kernel名称]
+./target/release/trace_processor stats <输入JSON> <输出CSV> [起始kernel名称] [decode最大耗时ms]
 ```
 
 ## 命令详解
@@ -59,9 +59,12 @@ cargo build --release
 - `起始kernel名称`（可选）：指定每个 ProfileStep 中开始统计的第一个 kernel 名称（包含匹配）
   - 默认值：`recover_decode_task`
   - 传入 `none` 可禁用裁剪，统计完整的 ProfileStep
+- `decode最大耗时ms`（可选）：decode 阶段最大耗时阈值（毫秒）
+  - 默认值：`30`
+  - 超过此阈值的 ProfileStep 被视为 prefill 阶段并过滤掉
 
 ```bash
-# 使用默认起始 kernel (recover_decode_task)
+# 使用默认起始 kernel (recover_decode_task) 和默认阈值 (30ms)
 ./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv
 
 # 指定自定义起始 kernel
@@ -69,6 +72,12 @@ cargo build --release
 
 # 禁用裁剪，统计完整 ProfileStep
 ./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv none
+
+# 禁用裁剪，并设置 decode 最大耗时为 50ms
+./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv none 50
+
+# 使用默认起始 kernel，设置 decode 最大耗时为 25ms
+./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv recover_decode_task 25
 ```
 
 **输出 CSV 格式：**
@@ -108,8 +117,9 @@ cargo build --release
 
 ### ProfileStep 过滤逻辑（stats 命令）
 
-- decode 阶段：耗时 ≤ 30ms（保留）
-- prefill 阶段：耗时 > 30ms（过滤）
+- decode 阶段：耗时 ≤ 阈值（保留）
+- prefill 阶段：耗时 > 阈值（过滤）
+- 阈值可通过 `decode_max_duration_ms` 参数配置，默认值为 30ms
 
 ### JSON 结构要求
 
