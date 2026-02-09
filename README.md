@@ -54,7 +54,7 @@ cargo build --release
 - 支持自定义起始 kernel 名称进行裁剪
 
 **参数说明：**
-- `输入JSON`：PyTorch Profiler 生成的 trace JSON 文件
+- `输入JSON`：Paddle Profiler 生成的 trace JSON 文件
 - `输出CSV`：统计结果输出文件
 - `起始kernel名称`（可选）：指定每个 ProfileStep 中开始统计的第一个 kernel 名称（包含匹配）
   - 默认值：`recover_decode_task`
@@ -113,7 +113,7 @@ cargo build --release
 
 ### JSON 结构要求
 
-输入 JSON 文件应符合 PyTorch Profiler 的标准格式：
+输入 JSON 文件应符合 Paddle Profiler 的标准格式：
 
 ```json
 {
