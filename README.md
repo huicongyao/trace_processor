@@ -1,24 +1,13 @@
-# Kernel Extractor
+# Trace Processor
 
-一个用 Rust 编写的高性能 GPU Kernel 提取和分析工具，用于从 PyTorch Profiler 的 JSON trace 文件中提取 GPU 操作记录并进行统计分析。
-
-## 功能特性
-
-- ✅ 高性能处理大型 JSON 文件（500+ MB）
-- ✅ 精确的时间范围过滤
-- ✅ ProfileStep 级别的 GPU 操作统计分析
-- ✅ 自动过滤 prefill 阶段，只保留 decode 阶段数据
-- ✅ 计算空泡时间（GPU 操作间的空闲间隔）
-- ✅ 自动按时间排序
-- ✅ 标准 CSV 格式输出
-- ✅ 进度显示
+一个用 Rust 编写的高性能 GPU Kernel 提取和分析工具，用于从 Paddle Profiler 的 JSON trace 文件中提取 GPU 操作记录并进行统计分析。
 
 ## 使用方法
 
 ### 编译
 
 ```bash
-cd kernel_extractor
+cd trace_processor
 cargo build --release
 ```
 
@@ -26,13 +15,13 @@ cargo build --release
 
 ```bash
 # 查看帮助
-./target/release/kernel_extractor
+./target/release/trace_processor
 
 # 按时间范围提取 GPU 操作
-./target/release/kernel_extractor extract <输入JSON> <输出CSV> <开始时间,结束时间>
+./target/release/trace_processor extract <输入JSON> <输出CSV> <开始时间,结束时间>
 
 # 统计 ProfileStep 内 GPU 操作的平均耗时
-./target/release/kernel_extractor stats <输入JSON> <输出CSV> [起始kernel名称]
+./target/release/trace_processor stats <输入JSON> <输出CSV> [起始kernel名称]
 ```
 
 ## 命令详解
@@ -42,7 +31,7 @@ cargo build --release
 从 JSON 文件中提取指定时间范围内的 GPU 操作记录。
 
 ```bash
-./target/release/kernel_extractor extract ../naive_spec_2.json output.csv 2684054.000,2687705.250
+./target/release/trace_processor extract ../naive_spec_2.json output.csv 2684054.000,2687705.250
 ```
 
 **输出 CSV 格式：**
@@ -73,13 +62,13 @@ cargo build --release
 
 ```bash
 # 使用默认起始 kernel (recover_decode_task)
-./target/release/kernel_extractor stats ../naive_spec_2.json profile_stats.csv
+./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv
 
 # 指定自定义起始 kernel
-./target/release/kernel_extractor stats ../naive_spec_2.json profile_stats.csv my_custom_kernel
+./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv my_custom_kernel
 
 # 禁用裁剪，统计完整 ProfileStep
-./target/release/kernel_extractor stats ../naive_spec_2.json profile_stats.csv none
+./target/release/trace_processor stats ../naive_spec_2.json profile_stats.csv none
 ```
 
 **输出 CSV 格式：**
