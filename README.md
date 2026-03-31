@@ -1,6 +1,6 @@
 # Trace Processor
 
-一个用 Rust 编写的高性能 GPU Kernel 提取和分析工具，用于从 Paddle Profiler 的 JSON trace 文件中提取 GPU 操作记录并进行统计分析。
+一个用 Rust 编写的高性能 GPU Kernel 提取和分析工具，用于从 Paddle Profiler / sglang / vllm / FastDeploy 的 JSON trace 文件中提取 GPU 操作记录并进行统计分析。
 
 ## 使用方法
 
@@ -22,6 +22,9 @@ cargo build --release
 
 # 统计 ProfileStep 内 GPU 操作的平均耗时
 ./target/release/trace_processor stats <输入JSON> <输出CSV> [起始kernel名称] [decode最大耗时ms]
+
+# 分析 decode step 延迟（支持 sglang / vllm / fastdeploy）
+./target/release/trace_processor decode-steps <framework> <输入JSON> [--output-csv <路径>] [--min-ms <值>] [--max-ms <值>]
 ```
 
 ## 命令详解
@@ -94,11 +97,63 @@ cargo build --release
 - 第一个操作：从 ProfileStep 开始到第一个操作开始的时间
 - 后续操作：当前操作开始时间 - 前一个操作结束时间
 
+### 3. `decode-steps` - Decode 延迟分析
+
+分析 sglang / vllm / FastDeploy 推理框架的 decode step 延迟，计算统计指标（mean、std、min、max、median、P90/P95/P99）。
+
+**支持的框架：**
+
+| 框架 | 解析策略 |
+|------|---------|
+| `sglang` | 按 `get_next_batch_to_run` 事件的时间戳间隔计算 |
+| `vllm` | 按 `step_with_batch_queue` 事件的时间戳间隔计算 |
+| `fastdeploy` | 按 `ProfileStep#N[...ms]` 事件的 `dur` 字段直接获取 |
+
+**参数说明：**
+- `framework`：推理框架名称（`sglang` / `vllm` / `fastdeploy`）
+- `输入JSON`：trace JSON 文件路径
+- `--output-csv <路径>`（可选）：输出延迟数据到 CSV 文件
+- `--min-ms <值>`（可选）：最小延迟过滤阈值，默认 `10.0` ms
+- `--max-ms <值>`（可选）：最大延迟过滤阈值，默认 `30.0` ms
+
+```bash
+# 分析 sglang trace
+./target/release/trace_processor decode-steps sglang sglang_trace.json
+
+# 分析 vllm trace，自定义过滤范围
+./target/release/trace_processor decode-steps vllm vllm_trace.json --min-ms 12 --max-ms 50
+
+# 分析 FastDeploy trace，输出 CSV
+./target/release/trace_processor decode-steps fastdeploy fd_trace.json --output-csv latencies.csv
+```
+
+**输出示例：**
+
+```
+============================================================
+sglang Decode Step Statistics
+============================================================
+Count:    79
+Mean:     17.800 ms
+Std Dev:  1.967 ms
+Min:      10.639 ms
+Max:      22.581 ms
+Median:   17.837 ms
+P90:      19.574 ms
+P95:      20.426 ms
+P99:      21.646 ms
+```
+
+**解析逻辑说明：**
+- sglang / vllm：收集目标事件的 `ts` 时间戳，排序后仅保留前 50% 时间范围内的数据（确保 decode 阶段已充分加载），然后计算相邻时间戳的间隔作为 step 延迟
+- FastDeploy：直接匹配 `ProfileStep#\d+[...ms]` 格式的事件，使用 `dur` 字段作为 step 延迟
+
 ## 依赖项
 
 - `serde` v1.0 - 序列化框架
 - `serde_json` v1.0 - JSON 解析
 - `csv` v1.3 - CSV 生成
+- `regex` v1 - 正则表达式（用于 FastDeploy 事件名匹配）
 
 ## 性能
 
@@ -123,20 +178,13 @@ cargo build --release
 
 ### JSON 结构要求
 
-输入 JSON 文件应符合 Paddle Profiler 的标准格式：
+输入 JSON 文件应包含 `traceEvents` 数组。不同命令对事件格式的要求如下：
+
+**`extract` / `stats` 命令**（Paddle Profiler 格式）：
 
 ```json
 {
   "traceEvents": [
-    {
-      "name": "ProfileStep#1234[15.xxx ms]",
-      "cat": "ProfileStep",
-      "ph": "X",
-      "args": {
-        "start_time": "0.000 us",
-        "end_time": "15xxx.xxx us"
-      }
-    },
     {
       "name": "kernel_name[xx us]",
       "cat": "Kernel",
@@ -150,13 +198,30 @@ cargo build --release
 }
 ```
 
+**`decode-steps` 命令**（sglang / vllm / FastDeploy 格式）：
+
+```json
+{
+  "traceEvents": [
+    {
+      "name": "python/sglang/.../get_next_batch_to_run",
+      "ph": "X",
+      "ts": 7240857455077.244,
+      "dur": 91.79
+    }
+  ]
+}
+```
+
 ## 项目结构
 
 ```
 src/
 ├── main.rs           # 命令行入口，参数解析
+├── common.rs         # 共享数据结构（TraceEvent）和工具函数（JSON 加载、时间解析）
 ├── extractor.rs      # 时间范围提取功能
-└── profile_stats.rs  # ProfileStep 统计分析功能
+├── profile_stats.rs  # ProfileStep 统计分析功能
+└── decode_steps.rs   # Decode step 延迟分析（sglang / vllm / FastDeploy）
 ```
 
 ## 许可证
