@@ -1,6 +1,9 @@
+mod common;
+mod decode_steps;
 mod extractor;
 mod profile_stats;
 
+use decode_steps::{DecodeStepsConfig, Framework};
 use extractor::{extract_kernels, print_preview, write_to_csv, ExtractConfig};
 use std::error::Error;
 
@@ -23,6 +26,15 @@ fn print_usage(program: &str) {
     eprintln!(
         "                              ProfileSteps exceeding this are filtered as prefill\n"
     );
+    eprintln!(
+        "  {} decode-steps <framework> <input_json> [--output-csv <path>] [--min-ms <val>] [--max-ms <val>]",
+        program
+    );
+    eprintln!("      Analyze decode step latency from sglang/vllm/fastdeploy traces");
+    eprintln!("      framework: sglang | vllm | fastdeploy");
+    eprintln!("      --output-csv: Optional CSV output path for latencies");
+    eprintln!("      --min-ms:     Minimum latency filter in ms (default: 10.0)");
+    eprintln!("      --max-ms:     Maximum latency filter in ms (default: 30.0)\n");
     eprintln!("Examples:");
     eprintln!(
         "  {} extract naive_spec_2.json output.csv 2684054.000,2687705.250",
@@ -121,6 +133,78 @@ fn main() -> Result<(), Box<dyn Error>> {
                 trim_start_kernel,
                 decode_max_duration_ms,
             )?;
+        }
+
+        "decode-steps" => {
+            if args.len() < 4 {
+                eprintln!("Error: 'decode-steps' requires at least 2 arguments");
+                eprintln!(
+                    "Usage: {} decode-steps <framework> <input_json> [--output-csv <path>] [--min-ms <val>] [--max-ms <val>]",
+                    args[0]
+                );
+                std::process::exit(1);
+            }
+
+            let framework = Framework::from_str(&args[2]).unwrap_or_else(|| {
+                eprintln!(
+                    "Unknown framework '{}'. Supported: sglang, vllm, fastdeploy",
+                    args[2]
+                );
+                std::process::exit(1);
+            });
+            let input_file = args[3].clone();
+
+            // Parse optional flags.
+            let mut output_csv: Option<String> = None;
+            let mut min_ms: f64 = 10.0;
+            let mut max_ms: f64 = 30.0;
+            let mut i = 4;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--output-csv" => {
+                        i += 1;
+                        output_csv = Some(args.get(i).cloned().unwrap_or_else(|| {
+                            eprintln!("Error: --output-csv requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--min-ms" => {
+                        i += 1;
+                        min_ms = args
+                            .get(i)
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or_else(|| {
+                                eprintln!("Error: --min-ms requires a numeric value");
+                                std::process::exit(1);
+                            });
+                    }
+                    "--max-ms" => {
+                        i += 1;
+                        max_ms = args
+                            .get(i)
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or_else(|| {
+                                eprintln!("Error: --max-ms requires a numeric value");
+                                std::process::exit(1);
+                            });
+                    }
+                    other => {
+                        eprintln!("Unknown option: {}", other);
+                        std::process::exit(1);
+                    }
+                }
+                i += 1;
+            }
+
+            let config = DecodeStepsConfig {
+                framework,
+                input_file,
+                output_csv,
+                min_ms,
+                max_ms,
+            };
+
+            decode_steps::analyze_decode_steps(&config)?;
         }
 
         _ => {

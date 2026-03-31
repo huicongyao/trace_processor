@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::BufWriter;
+
+use crate::common::{load_trace_json, parse_time_from_string, TraceEvent};
 
 /// ProfileStep event.
 #[derive(Debug, Clone)]
@@ -31,35 +32,6 @@ pub struct ProfileStatsRecord {
     pub avg_duration_us: f64,
     /// Bubble time: gap between the end of the previous operation and the start of the current one.
     pub bubble_time_us: f64,
-}
-
-/// Trace event structure for deserialization.
-#[derive(Debug, Deserialize)]
-struct TraceEvent {
-    name: String,
-    #[serde(default)]
-    cat: Option<String>,
-    #[serde(default)]
-    ph: Option<String>,
-    #[serde(default)]
-    args: Option<TraceArgs>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TraceArgs {
-    #[serde(default)]
-    start_time: Option<String>,
-    #[serde(default)]
-    end_time: Option<String>,
-}
-
-/// Parse a time string, e.g. "6609483.000 us".
-fn parse_time_from_string(time_str: &str) -> Option<f64> {
-    time_str
-        .trim()
-        .split_whitespace()
-        .next()
-        .and_then(|s| s.parse::<f64>().ok())
 }
 
 /// Normalize operation name by stripping the trailing dynamic duration suffix.
@@ -92,26 +64,17 @@ pub fn analyze_profile_stats(
 ) -> Result<(), Box<dyn Error>> {
     println!("Processing JSON file: {}", input_file);
 
-    // Open and parse the JSON file.
-    let file = File::open(input_file)?;
-    let reader = BufReader::new(file);
-
-    println!("Parsing JSON (this may take a while for large files)...");
-    let json: Value = serde_json::from_reader(reader)?;
-
-    // Retrieve the traceEvents array.
+    let json = load_trace_json(input_file)?;
     let trace_events = json["traceEvents"]
         .as_array()
         .ok_or("traceEvents not found or not an array")?;
-
-    println!("Total events in file: {}", trace_events.len());
 
     // First pass: collect all ProfileSteps and GPU operations.
     let mut profile_steps: Vec<ProfileStep> = Vec::new();
     let mut gpu_operations: Vec<GpuOperation> = Vec::new();
 
     for event_value in trace_events {
-        let event: TraceEvent = match serde_json::from_value(event_value.clone()) {
+        let event: TraceEvent = match TraceEvent::deserialize(event_value) {
             Ok(e) => e,
             Err(_) => continue,
         };

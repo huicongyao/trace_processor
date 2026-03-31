@@ -1,35 +1,9 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::BufWriter;
 
-/// Trace event structure.
-#[derive(Debug, Deserialize)]
-pub struct TraceEvent {
-    pub name: String,
-    #[serde(default)]
-    pub cat: Option<String>,
-    #[serde(default)]
-    pub ph: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub ts: Option<i64>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub dur: Option<f64>,
-    #[serde(default)]
-    pub args: Option<TraceArgs>,
-}
-
-/// Event arguments.
-#[derive(Debug, Deserialize)]
-pub struct TraceArgs {
-    #[serde(default)]
-    pub start_time: Option<String>,
-    #[serde(default)]
-    pub end_time: Option<String>,
-}
+use crate::common::{load_trace_json, parse_time_from_string, TraceEvent};
 
 /// Output kernel record.
 #[derive(Debug, Serialize)]
@@ -48,36 +22,17 @@ pub struct ExtractConfig {
     pub end_time: f64,
 }
 
-/// Parse a time string, e.g. "6609483.000 us".
-pub fn parse_time_from_string(time_str: &str) -> Option<f64> {
-    time_str
-        .trim()
-        .split_whitespace()
-        .next()
-        .and_then(|s| s.parse::<f64>().ok())
-}
-
 /// Extract kernel events from a JSON trace file.
 pub fn extract_kernels(config: &ExtractConfig) -> Result<Vec<KernelRecord>, Box<dyn Error>> {
-    println!("Processing JSON file: {}", config.input_file);
     println!(
         "Time range: {} us to {} us",
         config.start_time, config.end_time
     );
 
-    // Open and parse the JSON file.
-    let file = File::open(&config.input_file)?;
-    let reader = BufReader::new(file);
-
-    println!("Parsing JSON (this may take a while for large files)...");
-    let json: Value = serde_json::from_reader(reader)?;
-
-    // Retrieve the traceEvents array.
+    let json = load_trace_json(&config.input_file)?;
     let trace_events = json["traceEvents"]
         .as_array()
         .ok_or("traceEvents not found or not an array")?;
-
-    println!("Total events in file: {}", trace_events.len());
 
     // Collect matching kernel records.
     let mut kernel_records: Vec<KernelRecord> = Vec::new();
@@ -90,7 +45,7 @@ pub fn extract_kernels(config: &ExtractConfig) -> Result<Vec<KernelRecord>, Box<
             println!("Processed {}/{} events...", processed, total);
         }
 
-        let event: TraceEvent = match serde_json::from_value(event_value.clone()) {
+        let event: TraceEvent = match TraceEvent::deserialize(event_value) {
             Ok(e) => e,
             Err(_) => continue,
         };
